@@ -1,0 +1,315 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador de Mojoneras - FIC</title>
+
+    <!-- Leaflet: mapa interactivo -->
+    <link rel="stylesheet"
+          href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f1f4f8;
+            color: #243247;
+        }
+
+        header {
+            background: #142d4e;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 23px;
+        }
+
+        header p {
+            margin: 7px 0 0;
+            color: #d5e0ed;
+        }
+
+        .contenedor {
+            display: grid;
+            grid-template-columns: 340px 1fr;
+            gap: 15px;
+            padding: 15px;
+            max-width: 1500px;
+            margin: auto;
+        }
+
+        .panel {
+            background: white;
+            padding: 18px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px #00000012;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccd5df;
+            border-radius: 8px;
+            margin: 12px 0;
+            font-size: 15px;
+        }
+
+        #lista {
+            max-height: 350px;
+            overflow-y: auto;
+        }
+
+        .elemento {
+            padding: 11px;
+            border-bottom: 1px solid #e6ebf0;
+            cursor: pointer;
+            border-radius: 6px;
+        }
+
+        .elemento:hover {
+            background: #edf3fa;
+        }
+
+        .elemento strong {
+            color: #142d4e;
+        }
+
+        #mapa {
+            height: 620px;
+            width: 100%;
+            border-radius: 12px;
+            background: #e5eaf0;
+        }
+
+        .datos {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f5f7fa;
+            border-radius: 9px;
+            display: none;
+        }
+
+        .datos p {
+            margin: 9px 0;
+            font-size: 14px;
+            overflow-wrap: anywhere;
+        }
+
+        .boton {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 11px 15px;
+            background: #142d4e;
+            color: white;
+            text-decoration: none;
+            border-radius: 7px;
+        }
+
+        .boton:hover {
+            background: #244c78;
+        }
+
+        .estado {
+            color: #65758a;
+            font-size: 13px;
+        }
+
+        @media (max-width: 800px) {
+            .contenedor {
+                grid-template-columns: 1fr;
+            }
+
+            #mapa {
+                height: 450px;
+            }
+
+            #lista {
+                max-height: 220px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>VISUALIZADOR DE MOJONERAS</h1>
+    <p>Facultad de Ingeniería Civil | Topografía y Geomática</p>
+</header>
+
+<div class="contenedor">
+
+    <section class="panel">
+        <h2>Listado de mojoneras</h2>
+
+        <input
+            type="text"
+            id="busqueda"
+            placeholder="Buscar mojonera..."
+        >
+
+        <p class="estado" id="estado">Cargando información...</p>
+
+        <div id="lista"></div>
+
+        <div class="datos" id="datos">
+            <h3 id="nombre"></h3>
+
+            <p><strong>Elevación:</strong> <span id="elevacion"></span> m</p>
+
+            <p><strong>UTM Este (E):</strong> <span id="este"></span></p>
+
+            <p><strong>UTM Norte (N):</strong> <span id="norte"></span></p>
+
+            <p><strong>Coordenada topográfica X:</strong> <span id="x"></span></p>
+
+            <p><strong>Coordenada topográfica Y:</strong> <span id="y"></span></p>
+
+            <p><strong>Latitud:</strong> <span id="latitud"></span></p>
+
+            <p><strong>Longitud:</strong> <span id="longitud"></span></p>
+
+            <a id="pdf" class="boton" target="_blank">
+                Abrir cédula PDF
+            </a>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Ubicación de las mojoneras</h2>
+        <div id="mapa"></div>
+    </section>
+
+</div>
+
+<script>
+    // Crear mapa
+    const mapa = L.map('mapa');
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(mapa);
+
+    let mojoneras = [];
+    let marcadores = [];
+
+    // Cargar archivo CSV
+    Papa.parse('Mojoneras_Fic.csv', {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+
+        complete: function(resultado) {
+            mojoneras = resultado.data.filter(m =>
+                m.Mojonera &&
+                Number.isFinite(Number(m.Latitud)) &&
+                Number.isFinite(Number(m.Longitud))
+            );
+
+            document.getElementById('estado').textContent =
+                mojoneras.length + ' mojoneras cargadas';
+
+            mostrarLista(mojoneras);
+            crearMarcadores();
+        },
+
+        error: function() {
+            document.getElementById('estado').textContent =
+                'No se pudo cargar Mojoneras_Fic.csv';
+        }
+    });
+
+    // Mostrar listado
+    function mostrarLista(datos) {
+        const lista = document.getElementById('lista');
+        lista.innerHTML = '';
+
+        datos.forEach(m => {
+            const elemento = document.createElement('div');
+            elemento.className = 'elemento';
+
+            const nombre = document.createElement('strong');
+            nombre.textContent = m.Mojonera;
+
+            const cota = document.createElement('div');
+            cota.textContent = 'Elevación: ' + m.Elevacion + ' m';
+
+            elemento.append(nombre, cota);
+            elemento.addEventListener('click', () => seleccionar(m));
+
+            lista.appendChild(elemento);
+        });
+    }
+
+    // Crear marcadores
+    function crearMarcadores() {
+        const grupo = [];
+
+        mojoneras.forEach(m => {
+            const lat = Number(m.Latitud);
+            const lon = Number(m.Longitud);
+
+            const marcador = L.marker([lat, lon]).addTo(mapa);
+
+            marcador.bindTooltip(m.Mojonera);
+
+            marcador.on('click', () => seleccionar(m));
+
+            marcadores.push(marcador);
+            grupo.push([lat, lon]);
+        });
+
+        if (grupo.length > 0) {
+            mapa.fitBounds(grupo, { padding: [30, 30] });
+        }
+    }
+
+    // Mostrar información de una mojonera
+    function seleccionar(m) {
+        document.getElementById('datos').style.display = 'block';
+
+        document.getElementById('nombre').textContent = m.Mojonera;
+        document.getElementById('elevacion').textContent = m.Elevacion;
+        document.getElementById('este').textContent = m.E;
+        document.getElementById('norte').textContent = m.N;
+        document.getElementById('x').textContent = m.X;
+        document.getElementById('y').textContent = m.Y;
+        document.getElementById('latitud').textContent = m.Latitud;
+        document.getElementById('longitud').textContent = m.Longitud;
+
+        document.getElementById('pdf').href =
+            'cedulas/' + encodeURIComponent(m.Mojonera) + '.pdf';
+
+        mapa.setView(
+            [Number(m.Latitud), Number(m.Longitud)],
+            19
+        );
+    }
+
+    // Buscador
+    document.getElementById('busqueda').addEventListener('input', function() {
+        const texto = this.value.toLowerCase();
+
+        const filtradas = mojoneras.filter(m =>
+            m.Mojonera.toLowerCase().includes(texto)
+        );
+
+        mostrarLista(filtradas);
+    });
+</script>
+
+</body>
+</html>
